@@ -1,0 +1,133 @@
+Pipeline Steps 
+
+Write code & prepare project
+
+Build Docker Image
+
+Scan code with SonarQube
+
+Push Image to Nexus (private registry)
+
+Deploy Image on Kubernetes
+
+Map with domain name
+
+Set up Prometheus & Grafana for monitoring
+
+🟢 Step 1: Install Tools
+sudo apt update
+sudo apt install docker.io docker-compose kubectl helm git -y
+
+
+Verify:
+
+docker --version
+kubectl version --client
+helm version
+git --version
+
+🟢 Step 2: Run Nexus & SonarQube Locally
+docker run -d --name nexus -p 8081:8081 -p 8082:8082 sonatype/nexus3
+docker run -d --name sonarqube -p 9000:9000 sonarqube:lts-community
+
+
+Nexus → http://localhost:8081
+
+SonarQube → http://localhost:9000
+
+🟢 Step 3: Create a Simple App
+mkdir my-app && cd my-app
+git init
+
+
+index.html
+
+<h1>Hello DevOps</h1>
+
+
+Dockerfile
+
+FROM nginx:alpine
+COPY . /usr/share/nginx/html
+
+🟢 Step 4: Build & Run Docker Image
+docker build -t my-app:latest .
+docker run -d -p 8080:80 my-app:latest
+
+
+Check → http://localhost:8080
+
+🟢 Step 5: SonarQube Code Analysis
+docker run --rm \
+  -e SONAR_HOST_URL=http://localhost:9000 \
+  -e SONAR_LOGIN=PUT_TOKEN_FROM_SONARQUBE \
+  -v "$PWD:/usr/src" \
+  sonarsource/sonar-scanner-cli
+
+🟢 Step 6: Push Docker Image to Nexus
+export REG=nexus.local:8082
+docker tag my-app:latest $REG/my-app:latest
+docker login $REG
+docker push $REG/my-app:latest
+
+🟢 Step 7: Deploy on Kubernetes
+kubectl create namespace prod
+
+
+deployment.yaml
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-app
+  namespace: prod
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: my-app
+  template:
+    metadata:
+      labels:
+        app: my-app
+    spec:
+      containers:
+      - name: my-app
+        image: nexus.local:8082/my-app:latest
+        ports:
+        - containerPort: 80
+
+
+service.yaml
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-app
+  namespace: prod
+spec:
+  selector:
+    app: my-app
+  ports:
+  - port: 80
+    targetPort: 80
+
+
+Deploy:
+
+kubectl apply -f deployment.yaml
+kubectl apply -f service.yaml
+
+🟢 Step 8: Domain Mapping
+
+Local → add in /etc/hosts
+
+sudo sh -c 'echo "127.0.0.1 domain.com" >> /etc/hosts'
+
+
+Real server → add A record in DNS to point to server IP.
+
+🟢 Step 9: Monitoring with Prometheus & Grafana
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo update
+helm install monitor prometheus-community/kube-prometheus-stack -n monitoring --create-namespace
